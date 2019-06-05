@@ -129,6 +129,8 @@ class VLANApplication(Application, WhoIsIAmServices, ReadWritePropertyServices):
         # eliminate the source and invoke ID, rewrite the destination
         apdu.pduSource = apdu.apduInvokeID = None
         apdu.pduDestination = self.proxyAddress
+        if _debug:
+            VLANApplication._debug("    - apdu: %r", apdu)
 
         # make an IOCB and reference the context
         iocb = IOCB(apdu)
@@ -189,7 +191,12 @@ class VLANApplication(Application, WhoIsIAmServices, ReadWritePropertyServices):
 
         # check for some services
         if isinstance(apdu, WhoIsRequest):
-            pass
+            if _debug:
+                VLANApplication._debug("    - process locally")
+            Application.indication(self, apdu)
+            return
+
+        # all other unconfirmed requests dropped
         if isinstance(apdu, UnconfirmedRequestPDU):
             if _debug:
                 VLANApplication._debug("    - no forwarding")
