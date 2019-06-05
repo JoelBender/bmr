@@ -1,0 +1,59 @@
+{
+    "broker": {
+        "lan": "b",
+        "host": "enterprise",
+        "port": 1883,
+        "keepalive": 60,
+        "network": 10
+    },
+    "outside": {
+        "_deviceAddress": "0x010203",
+        "objectName": "vega-outside",
+        "objectIdentifier": 599,
+        "systemStatus": "operational",
+        "vendorName": "Carrick Bender Design",
+        "vendorIdentifier": 999,
+        "modelName": "BACnet Masquerade Router",
+        "firmwareRevision": "N/A",
+        "applicationSoftwareVersion": "1.0",
+        "protocolVersion": 1,
+        "protocolRevision": 12,
+        "protocolObjectTypesSupported": ["device"],
+        "deviceAddressBinding": [],
+        "maxApduLengthAccepted": 1024,
+        "segmentationSupported": "noSegmentation",
+        "databaseRevision": 1
+    },
+    "vlan": {
+        "name": "sample",
+        "network": 12,
+        "devices": [
+            {
+                "_deviceAddress": 2,
+                "objectName": "vega-1",
+                "objectIdentifier": 1202,
+                "vendorIdentifier": 999,
+                "_proxyAddress": "wlp2s0:47809",
+                "_proxyIdentifier": 19
+            }
+        ]
+    },
+    "inside": {
+        "_deviceAddress": "wlp2s0",
+        "objectName": "vega-inside",
+        "objectIdentifier": 599,
+        "systemStatus": "operational",
+        "vendorName": "Carrick Bender Design",
+        "vendorIdentifier": 999,
+        "modelName": "BACnet Masquerade Router",
+        "firmwareRevision": "N/A",
+        "applicationSoftwareVersion": "1.0",
+        "protocolVersion": 1,
+        "protocolRevision": 12,
+        "protocolObjectTypesSupported": ["device"],
+        "deviceAddressBinding": [],
+        "maxApduLengthAccepted": 1024,
+        "segmentationSupported": "noSegmentation",
+        "databaseRevision": 1
+    }
+}
