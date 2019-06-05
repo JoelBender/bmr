@@ -24,3 +24,16 @@ The applications in this project are based on
 protocol extension for using MQTT publish/subscribe to emulate a LAN.
 
 For more information see the [wiki](https://github.com/JoelBender/bmr/wiki).
+
+### History and Motivation
+
+Back in the earliest days of the **BACnet Interest Group - North America**, which
+is now called [BACnet International](https://www.bacnetinternational.org/),
+there was a project called the **Open BACnet Interoperable Wide Area Network**
+(OBIWAN) with Dave Thompson, then with the
+[The Penn State Facilities Engineering Institute](https://www.psfei.psu.edu/).
+The basic idea was simple, allow the BACnet networks in Higher Ed institutions
+like Cornell University, Penn State, Ohio State, and Princeton, to join together
+into one network that can share real-time data, applications, and insights.
+
+This project is one small component of that overall vision.
