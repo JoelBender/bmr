@@ -16,9 +16,31 @@ from bacpypes.core import run, deferred, enable_sleeping
 from bacpypes.iocb import IOCB
 
 from bacpypes.pdu import Address, GlobalBroadcast
-from bacpypes.apdu import WhoIsRequest, IAmRequest, ReadPropertyRequest, ReadPropertyACK
-from bacpypes.primitivedata import Unsigned, ObjectIdentifier
-from bacpypes.constructeddata import Array
+from bacpypes.apdu import (
+    WhoIsRequest,
+    IAmRequest,
+    ReadPropertyRequest,
+    ReadPropertyACK,
+    WritePropertyRequest,
+    SimpleAckPDU,
+)
+from bacpypes.primitivedata import (
+    Null,
+    Atomic,
+    Boolean,
+    Unsigned,
+    Integer,
+    Real,
+    Double,
+    OctetString,
+    CharacterString,
+    BitString,
+    Date,
+    Time,
+    ObjectIdentifier,
+)
+from bacpypes.constructeddata import Array, Any, AnyAtomic
+
 
 from bacpypes.app import ApplicationIOController
 from bacpypes.appservice import StateMachineAccessPoint, ApplicationServiceAccessPoint
@@ -324,6 +346,143 @@ class ClientConsoleCmd(ConsoleCmd):
             else:
                 if _debug:
                     ClientConsoleCmd._debug("    - ioError or ioResponse expected")
+
+        except Exception as error:
+            ClientConsoleCmd._exception("exception: %r", error)
+
+    def do_write(self, args):
+        """write <addr> <objid> <prop> <value> [ <indx> ] [ <priority> ]"""
+        args = args.split()
+        ClientConsoleCmd._debug("do_write %r", args)
+
+        try:
+            addr, obj_id, prop_id = args[:3]
+            obj_id = ObjectIdentifier(obj_id).value
+            value = args[3]
+
+            indx = None
+            if len(args) >= 5:
+                if args[4] != "-":
+                    indx = int(args[4])
+            if _debug:
+                ClientConsoleCmd._debug("    - indx: %r", indx)
+
+            priority = None
+            if len(args) >= 6:
+                priority = int(args[5])
+            if _debug:
+                ClientConsoleCmd._debug("    - priority: %r", priority)
+
+            # get the datatype
+            datatype = get_datatype(obj_id[0], prop_id)
+            if _debug:
+                ClientConsoleCmd._debug("    - datatype: %r", datatype)
+
+            # change atomic values into something encodeable, null is a special case
+            if value == "null":
+                value = Null()
+            elif issubclass(datatype, AnyAtomic):
+                dtype, dvalue = value.split(":", 1)
+                if _debug:
+                    ClientConsoleCmd._debug(
+                        "    - dtype, dvalue: %r, %r", dtype, dvalue
+                    )
+
+                datatype = {
+                    "b": Boolean,
+                    "u": lambda x: Unsigned(int(x)),
+                    "i": lambda x: Integer(int(x)),
+                    "r": lambda x: Real(float(x)),
+                    "d": lambda x: Double(float(x)),
+                    "o": OctetString,
+                    "c": CharacterString,
+                    "bs": BitString,
+                    "date": Date,
+                    "time": Time,
+                    "id": ObjectIdentifier,
+                }[dtype]
+                if _debug:
+                    ClientConsoleCmd._debug("    - datatype: %r", datatype)
+
+                value = datatype(dvalue)
+                if _debug:
+                    ClientConsoleCmd._debug("    - value: %r", value)
+
+            elif issubclass(datatype, Atomic):
+                if datatype is Integer:
+                    value = int(value)
+                elif datatype is Real:
+                    value = float(value)
+                elif datatype is Unsigned:
+                    value = int(value)
+                value = datatype(value)
+            elif issubclass(datatype, Array) and (indx is not None):
+                if indx == 0:
+                    value = Integer(value)
+                elif issubclass(datatype.subtype, Atomic):
+                    value = datatype.subtype(value)
+                elif not isinstance(value, datatype.subtype):
+                    raise TypeError(
+                        "invalid result datatype, expecting %s"
+                        % (datatype.subtype.__name__,)
+                    )
+            elif not isinstance(value, datatype):
+                raise TypeError(
+                    "invalid result datatype, expecting %s" % (datatype.__name__,)
+                )
+            if _debug:
+                ClientConsoleCmd._debug(
+                    "    - encodeable value: %r %s", value, type(value)
+                )
+
+            # build a request
+            request = WritePropertyRequest(
+                objectIdentifier=obj_id, propertyIdentifier=prop_id
+            )
+            request.pduDestination = Address(addr)
+
+            # save the value
+            request.propertyValue = Any()
+            try:
+                request.propertyValue.cast_in(value)
+            except Exception as error:
+                ClientConsoleCmd._exception("WriteProperty cast error: %r", error)
+
+            # optional array index
+            if indx is not None:
+                request.propertyArrayIndex = indx
+
+            # optional priority
+            if priority is not None:
+                request.priority = priority
+
+            if _debug:
+                ClientConsoleCmd._debug("    - request: %r", request)
+
+            # make an IOCB
+            iocb = IOCB(request)
+            if _debug:
+                ClientConsoleCmd._debug("    - iocb: %r", iocb)
+
+            # give it to the application
+            deferred(this_application.request_io, iocb)
+
+            # wait for it to complete
+            iocb.wait()
+
+            # do something for success
+            if iocb.ioResponse:
+                # should be an ack
+                if not isinstance(iocb.ioResponse, SimpleAckPDU):
+                    if _debug:
+                        ClientConsoleCmd._debug("    - not an ack")
+                    return
+
+                sys.stdout.write("ack\n")
+
+            # do something for error/reject/abort
+            if iocb.ioError:
+                sys.stdout.write(str(iocb.ioError) + "\n")
 
         except Exception as error:
             ClientConsoleCmd._exception("exception: %r", error)
