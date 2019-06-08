@@ -33,10 +33,10 @@ args = None
 
 @bacpypes_debugging
 class MQTT2IPRouter:
-    def __init__(self, lan, addr1, net1, addr2, net2):
+    def __init__(self, lan, mqtt_addr, mqtt_net, ip_addr, ip_net):
         if _debug:
             MQTT2IPRouter._debug(
-                "__init__ %r %r %r %r %r", lan, addr1, net1, addr2, net2
+                "__init__ %r %r %r %r %r", lan, mqtt_addr, mqtt_net, ip_addr, ip_net
             )
         global args
 
@@ -51,7 +51,7 @@ class MQTT2IPRouter:
 
         # create an MQTT client
         self.s1_msap = bacpypes_mqtt.MQTTClient(
-            lan, addr1, args.host, port=args.port, keepalive=args.keepalive
+            lan, mqtt_addr, args.host, port=args.port, keepalive=args.keepalive
         )
 
         # create a service element for the client
@@ -59,7 +59,7 @@ class MQTT2IPRouter:
         bind(self.s1_mse, self.s1_msap)
 
         # bind to the MQTT network
-        self.nsap.bind(self.s1_msap, net1)
+        self.nsap.bind(self.s1_msap, mqtt_net)
 
         # == Second stack
 
@@ -67,13 +67,13 @@ class MQTT2IPRouter:
         # on the UDP multiplexer
         self.s2_bip = BIPSimple()
         self.s2_annexj = AnnexJCodec()
-        self.s2_mux = UDPMultiplexer(addr2)
+        self.s2_mux = UDPMultiplexer(ip_addr)
 
         # bind the bottom layers
         bind(self.s2_bip, self.s2_annexj, self.s2_mux.annexJ)
 
         # bind the BIP stack to the local network
-        self.nsap.bind(self.s2_bip, net2)
+        self.nsap.bind(self.s2_bip, ip_net)
 
 
 #
@@ -89,12 +89,12 @@ def main():
 
     # arguments for first network
     parser.add_argument("lan", type=str, help="MQTT network name")
-    parser.add_argument("addr1", type=str, help="address of first network")
-    parser.add_argument("net1", type=int, help="network number of first network")
+    parser.add_argument("mqtt_addr", type=str, help="address on the MQTT network")
+    parser.add_argument("mqtt_net", type=int, help="network number of MQTT network")
 
     # arguments for B/IP network
-    parser.add_argument("addr2", type=str, help="address of second network")
-    parser.add_argument("net2", type=int, help="network number of second network")
+    parser.add_argument("ip_addr", type=str, help="address on the IPv4 network")
+    parser.add_argument("ip_net", type=int, help="network number of IPv4 network")
 
     # additional options for the MQTT client
     parser.add_argument(
@@ -126,7 +126,11 @@ def main():
 
     # create the router
     router = MQTT2IPRouter(
-        args.lan, Address(args.addr1), args.net1, Address(args.addr2), args.net2
+        args.lan,
+        Address(args.mqtt_addr),
+        args.mqtt_net,
+        Address(args.ip_addr),
+        args.ip_net,
     )
     if _debug:
         _log.debug("    - router: %r", router)
