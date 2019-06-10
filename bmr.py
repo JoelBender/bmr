@@ -302,6 +302,8 @@ class OutsideApplication(Application, WhoIsIAmServices, ReadWritePropertyService
             outside_address,
             host=broker_settings["host"],
             port=broker_settings["port"],
+            username=broker_settings.get("username", None),
+            password=broker_settings.get("password", None),
             keepalive=broker_settings["keepalive"],
         )
 

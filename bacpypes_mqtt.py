@@ -538,6 +538,8 @@ class MQTTClient(ServiceAccessPoint, Server):
         client,
         host=default_broker_host,
         port=default_broker_port,
+        username=None,
+        password=None,
         keepalive=default_broker_keepalive,
         sap=None,
         sid=None,
@@ -556,6 +558,8 @@ class MQTTClient(ServiceAccessPoint, Server):
         # save the connection parameters
         self.host = host
         self.port = port
+        self.username = username
+        self.password = password
         self.keepalive = keepalive
 
         # create a client and set the callbacks
@@ -711,6 +715,14 @@ class MQTTServiceElement(ApplicationServiceElement):
 
         # service access point has client
         sap = self.elementService
+
+        # username and password authentication
+        if sap.username and sap.password:
+            if _debug:
+                MQTTServiceElement._debug("    - username, password: %r, %r", sap.username, sap.password)
+            sap.mqtt_client.username_pw_set(
+                username=sap.username, password=sap.password
+            )
 
         # queue up a start the connection process
         response = sap.mqtt_client.connect(sap.host, sap.port, sap.keepalive)

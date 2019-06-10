@@ -526,6 +526,8 @@ def main():
         default=bacpypes_mqtt.default_broker_port,
         help="broker port",
     )
+    parser.add_argument("--username", type=str, default=None, help="broker username")
+    parser.add_argument("--password", type=str, default=None, help="broker password")
     parser.add_argument(
         "--keepalive",
         type=int,

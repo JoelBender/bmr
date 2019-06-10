@@ -51,7 +51,13 @@ class MQTT2IPRouter:
 
         # create an MQTT client
         self.s1_msap = bacpypes_mqtt.MQTTClient(
-            lan, mqtt_addr, args.host, port=args.port, keepalive=args.keepalive
+            lan,
+            mqtt_addr,
+            args.host,
+            port=args.port,
+            username=args.username,
+            password=args.password,
+            keepalive=args.keepalive,
         )
 
         # create a service element for the client
@@ -109,6 +115,8 @@ def main():
         default=bacpypes_mqtt.default_broker_port,
         help="broker port",
     )
+    parser.add_argument("--username", type=str, default=None, help="broker username")
+    parser.add_argument("--password", type=str, default=None, help="broker password")
     parser.add_argument(
         "--keepalive",
         type=int,

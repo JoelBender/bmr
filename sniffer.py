@@ -265,6 +265,8 @@ class MQTTSniffer:
         lan,
         host=default_broker_host,
         port=default_broker_port,
+        username=None,
+        password=None,
         keepalive=default_broker_keepalive,
     ):
         if _debug:
@@ -276,6 +278,8 @@ class MQTTSniffer:
         # save the connection parameters
         self.host = host
         self.port = port
+        self.username = username
+        self.password = password
         self.keepalive = keepalive
 
         # create a client and set the callbacks
@@ -293,6 +297,14 @@ class MQTTSniffer:
     def startup(self):
         if _debug:
             MQTTSniffer._debug("startup")
+
+        # username and password authentication
+        if self.username and self.password:
+            if _debug:
+                MQTTSniffer._debug("    - username, password: %r, %r", self.username, self.password)
+            self.mqtt_client.username_pw_set(
+                username=self.username, password=self.password
+            )
 
         # queue up a start the connection process
         response = self.mqtt_client.connect(self.host, self.port, self.keepalive)
@@ -402,6 +414,8 @@ def main():
     parser.add_argument(
         "--port", type=int, default=default_broker_port, help="broker port"
     )
+    parser.add_argument("--username", type=str, default=None, help="broker username")
+    parser.add_argument("--password", type=str, default=None, help="broker password")
     parser.add_argument(
         "--keepalive",
         type=int,
@@ -417,7 +431,9 @@ def main():
         _log.debug("    - args: %r", args)
 
     # make a simple application
-    this_application = MQTTSniffer(args.lan, args.host, args.port, args.keepalive)
+    this_application = MQTTSniffer(
+        args.lan, args.host, args.port, args.username, args.password, args.keepalive
+    )
 
     # enable sleeping will help with threads
     enable_sleeping()
