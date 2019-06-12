@@ -397,8 +397,8 @@ def main():
             settings = json.load(settings_file)
             if _debug:
                 _log.debug("    - settings: %r", settings)
-    except FileNotFoundError as err:
-        sys.stderr.write("settings file not found: %r\n" % (args.settings,))
+    except IOError as err:
+        sys.stderr.write("IO error reading settings file: %r\n" % (args.settings,))
         sys.exit(1)
 
     # make the inside device object
