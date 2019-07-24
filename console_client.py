@@ -122,7 +122,13 @@ class MQTTApplication(
 
         # create an MQTT client
         self.msap = bacpypes_mqtt.MQTTClient(
-            lan, localAddress, args.host, port=args.port, keepalive=args.keepalive
+            lan,
+            localAddress,
+            args.host,
+            port=args.port,
+            username=args.username,
+            password=args.password,
+            keepalive=args.keepalive,
         )
 
         # create a service element for the client

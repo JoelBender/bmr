@@ -548,6 +548,7 @@ class MQTTClient(ServiceAccessPoint, Server):
             MQTTClient._debug(
                 "__init__ %r %r %r %r %r", lan, client, host, port, keepalive
             )
+            MQTTClient._debug("    - username, password: %r, %r", username, password)
         ServiceAccessPoint.__init__(self, sap)
         Server.__init__(self, sid)
 
@@ -599,7 +600,10 @@ class MQTTClient(ServiceAccessPoint, Server):
             MQTTClient._debug("on_connect %r %r %r %r", client, userdata, flags, rc)
 
         # we are connected
-        self.mqtt_connected = True
+        if rc == 0:
+            if _debug:
+                MQTTClient._debug("    - connected")
+            self.mqtt_connected = True
 
     def on_disconnect(self, *args):
         if _debug:
@@ -671,6 +675,12 @@ class MQTTClient(ServiceAccessPoint, Server):
         if _debug:
             MQTTClient._debug("indication %r", pdu)
 
+        # make sure we're connected
+        if not self.mqtt_connected:
+            if _debug:
+                MQTTClient._debug("    - not connected")
+            return
+
         # make an encapsulated PDU
         xpdu = EncapsulatedNPDU(self.client, pdu, user_data=pdu.pduUserData)
 
@@ -719,7 +729,9 @@ class MQTTServiceElement(ApplicationServiceElement):
         # username and password authentication
         if sap.username and sap.password:
             if _debug:
-                MQTTServiceElement._debug("    - username, password: %r, %r", sap.username, sap.password)
+                MQTTServiceElement._debug(
+                    "    - username, password: %r, %r", sap.username, sap.password
+                )
             sap.mqtt_client.username_pw_set(
                 username=sap.username, password=sap.password
             )
@@ -735,7 +747,7 @@ class MQTTServiceElement(ApplicationServiceElement):
         )
         if _debug:
             MQTTServiceElement._debug(
-                "    - local subscribe result, mid: %r, %r", result, mid
+                "    - subscribe result, mid: %r, %r", result, mid
             )
 
         # build an Online PDU, encode it
