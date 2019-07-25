@@ -348,11 +348,21 @@ class MQTTSniffer:
             MQTTSniffer._debug("on_connect %r %r %r %r", client, userdata, flags, rc)
 
         # we are connected
-        self.mqtt_connected = True
+        if rc == 0:
+            if _debug:
+                MQTTClient._debug("    - connected")
+            self.mqtt_connected = True
 
-    def on_disconnect(self, *args):
+    def on_disconnect(self, client, userdata, rc):
+        """Callback for when the client is disconnected from the server.
+        """
         if _debug:
-            MQTTSniffer._debug("on_disconnect %r", args)
+            MQTTSniffer._debug("on_disconnect %r %r %r", client, userdata, rc)
+
+        # we are connected
+        if rc == 0:
+            if _debug:
+                MQTTClient._debug("    - normal disconnect")
 
         # we are no longer connected
         self.mqtt_connected = False
