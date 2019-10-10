@@ -7,8 +7,9 @@ BACnet Masqurade Router
 import sys
 import json
 
+from bacpypes.settings import settings as _settings
 from bacpypes.debugging import bacpypes_debugging, DebugContents, ModuleLogger
-from bacpypes.consolelogging import ArgumentParser
+from bacpypes.consolelogging import JSONArgumentParser
 
 from bacpypes.core import run, deferred
 from bacpypes.iocb import IOCB
@@ -24,6 +25,7 @@ from bacpypes.pdu import Address, LocalBroadcast
 
 from bacpypes.vlan import Network, Node
 from bacpypes.netservice import NetworkServiceAccessPoint, NetworkServiceElement
+from bacpypes.bvllservice import BIPSimple, AnnexJCodec, UDPMultiplexer
 
 from bacpypes.app import Application, BIPSimpleApplication
 from bacpypes.appservice import StateMachineAccessPoint, ApplicationServiceAccessPoint
@@ -55,9 +57,6 @@ import bacpypes_mqtt
 # some debugging
 _debug = 0
 _log = ModuleLogger(globals())
-
-# settings
-SETTINGS_FILE = "bmr.json"
 
 # globals
 args = None
@@ -294,27 +293,44 @@ class OutsideApplication(Application, WhoIsIAmServices, ReadWritePropertyService
         bind(self.nse, self.nsap)
 
         # broker settings
-        broker_settings = settings["broker"]
+        if "broker" in settings:
+            broker_settings = settings["broker"]
 
-        # create an MQTT client
-        self.msap = bacpypes_mqtt.MQTTClient(
-            broker_settings["lan"],
-            outside_address,
-            host=broker_settings["host"],
-            port=broker_settings["port"],
-            username=broker_settings.get("username", None),
-            password=broker_settings.get("password", None),
-            keepalive=broker_settings["keepalive"],
-        )
+            # create an MQTT client
+            self.msap = bacpypes_mqtt.MQTTClient(
+                broker_settings["lan"],
+                outside_address,
+                host=broker_settings["host"],
+                port=broker_settings["port"],
+                username=broker_settings.get("username", None),
+                password=broker_settings.get("password", None),
+                keepalive=broker_settings["keepalive"],
+            )
 
-        # create a service element for the client
-        self.mse = bacpypes_mqtt.MQTTServiceElement()
-        bind(self.mse, self.msap)
+            # create a service element for the client
+            self.mse = bacpypes_mqtt.MQTTServiceElement()
+            bind(self.mse, self.msap)
 
-        # bind to the MQTT network
-        self.nsap.bind(
-            self.msap, net=broker_settings["network"], address=outside_address
-        )
+            # bind to the MQTT network
+            self.nsap.bind(
+                self.msap, net=broker_settings["network"], address=outside_address
+            )
+        # regular IP settings
+        else:
+            # create a generic BIP stack, bound to the Annex J server
+            # on the UDP multiplexer
+            self.bip = BIPSimple()
+            self.annexj = AnnexJCodec()
+            self.mux = UDPMultiplexer(outside_address)
+
+            # bind the bottom layers
+            bind(self.bip, self.annexj, self.mux.annexJ)
+
+            # no special service element
+            self.mse = None
+
+            # bind the BIP stack to the network
+            self.nsap.bind(self.bip, net=settings.outside.network, address=outside_address)
 
         # VLAN settings
         vlan_settings = settings["vlan"]
@@ -377,12 +393,7 @@ def main():
     global args, inside_application, outside_application
 
     # parse the command line arguments
-    parser = ArgumentParser(description=__doc__)
-
-    # add an argument for settings file location
-    parser.add_argument(
-        "--settings", type=str, help="settings file", default=SETTINGS_FILE
-    )
+    parser = JSONArgumentParser(description=__doc__)
 
     # now parse the arguments
     args = parser.parse_args()
@@ -390,16 +401,12 @@ def main():
     if _debug:
         _log.debug("initialization")
         _log.debug("    - args: %r", args)
+        _log.debug("    - _settings: %r", _settings)
 
-    # read in the settings file
-    try:
-        with open(args.settings) as settings_file:
-            settings = json.load(settings_file)
-            if _debug:
-                _log.debug("    - settings: %r", settings)
-    except IOError as err:
-        sys.stderr.write("IO error reading settings file: %r\n" % (args.settings,))
-        sys.exit(1)
+    # settings are the JSON file
+    settings = args.json
+    if _debug:
+        _log.debug("    - settings: %r", settings)
 
     # make the inside device object
     inside_device = LocalDeviceObject(**settings["inside"])
@@ -424,14 +431,16 @@ def main():
     deferred(outside_application.i_am)
 
     # start up the client
-    outside_application.mse.startup()
+    if outside_application.mse:
+        outside_application.mse.startup()
 
     _log.debug("running")
 
     run()
 
     # shutdown the client
-    outside_application.mse.shutdown()
+    if outside_application.mse:
+        outside_application.mse.shutdown()
 
     _log.debug("fini")
 
