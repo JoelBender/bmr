@@ -129,6 +129,7 @@ class MQTTApplication(
             username=args.username,
             password=args.password,
             keepalive=args.keepalive,
+            cafile=args.cafile,
         )
 
         # create a service element for the client
@@ -540,6 +541,7 @@ def main():
         default=bacpypes_mqtt.default_broker_keepalive,
         help="maximum period in seconds allowed between communications with the broker",
     )
+    parser.add_argument("--cafile", type=str, default=None, help="server certificate")
 
     # parse the command line arguments
     args = parser.parse_args()

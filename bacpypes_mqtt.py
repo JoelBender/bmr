@@ -4,6 +4,8 @@
 This module provides a virtual link layer using MQTT.
 """
 
+import ssl
+
 from struct import pack, unpack
 
 from bacpypes.errors import EncodingError, DecodingError
@@ -541,6 +543,7 @@ class MQTTClient(ServiceAccessPoint, Server):
         username=None,
         password=None,
         keepalive=default_broker_keepalive,
+        cafile=None,
         sap=None,
         sid=None,
     ):
@@ -549,6 +552,7 @@ class MQTTClient(ServiceAccessPoint, Server):
                 "__init__ %r %r %r %r %r", lan, client, host, port, keepalive
             )
             MQTTClient._debug("    - username, password: %r, %r", username, password)
+            MQTTClient._debug("    - cafile: %r", cafile)
         ServiceAccessPoint.__init__(self, sap)
         Server.__init__(self, sid)
 
@@ -562,6 +566,7 @@ class MQTTClient(ServiceAccessPoint, Server):
         self.username = username
         self.password = password
         self.keepalive = keepalive
+        self.cafile = cafile
 
         # create a client and set the callbacks
         self.mqtt_client = _paho_mqtt.Client()
@@ -571,6 +576,14 @@ class MQTTClient(ServiceAccessPoint, Server):
         self.mqtt_client.on_message = self.on_message
         self.mqtt_client.on_publish = self.on_publish
         self.mqtt_client.on_unsubscribe = self.on_unsubscribe
+
+        # use TLS
+        if self.cafile:
+            self.mqtt_client.tls_set(
+                ca_certs=self.cafile, cert_reqs=ssl.CERT_REQUIRED, tls_version=None
+            )
+            if _debug:
+                MQTTClient._debug("    - tls set")
 
         # we are not connected
         self.mqtt_connected = False

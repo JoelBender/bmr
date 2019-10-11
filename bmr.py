@@ -305,6 +305,7 @@ class OutsideApplication(Application, WhoIsIAmServices, ReadWritePropertyService
                 username=broker_settings.get("username", None),
                 password=broker_settings.get("password", None),
                 keepalive=broker_settings["keepalive"],
+                cafile=broker_settings.get("cafile", None),
             )
 
             # create a service element for the client
