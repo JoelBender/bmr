@@ -7,6 +7,7 @@ receives.
 """
 
 import sys
+import ssl
 
 from bacpypes.debugging import bacpypes_debugging, ModuleLogger, btox
 from bacpypes.consolelogging import ArgumentParser
@@ -268,6 +269,7 @@ class MQTTSniffer:
         username=None,
         password=None,
         keepalive=default_broker_keepalive,
+        cafile=None,
     ):
         if _debug:
             MQTTSniffer._debug("__init__ %r %r %r %r", lan, host, port, keepalive)
@@ -281,6 +283,7 @@ class MQTTSniffer:
         self.username = username
         self.password = password
         self.keepalive = keepalive
+        self.cafile = cafile
 
         # create a client and set the callbacks
         self.mqtt_client = _paho_mqtt.Client()
@@ -290,6 +293,14 @@ class MQTTSniffer:
         self.mqtt_client.on_message = self.on_message
         self.mqtt_client.on_publish = self.on_publish
         self.mqtt_client.on_unsubscribe = self.on_unsubscribe
+
+        # use TLS
+        if self.cafile:
+            self.mqtt_client.tls_set(
+                ca_certs=self.cafile, cert_reqs=ssl.CERT_REQUIRED, tls_version=None
+            )
+            if _debug:
+                MQTTSniffer._debug("    - tls set")
 
         # we are not connected
         self.mqtt_connected = False
@@ -301,7 +312,9 @@ class MQTTSniffer:
         # username and password authentication
         if self.username and self.password:
             if _debug:
-                MQTTSniffer._debug("    - username, password: %r, %r", self.username, self.password)
+                MQTTSniffer._debug(
+                    "    - username, password: %r, %r", self.username, self.password
+                )
             self.mqtt_client.username_pw_set(
                 username=self.username, password=self.password
             )
@@ -378,9 +391,7 @@ class MQTTSniffer:
         """
         if _debug:
             MQTTSniffer._debug("on_message ...")
-        if _debug:
             MQTTSniffer._debug("    - msg.topic: %r", msg.topic)
-        if _debug:
             MQTTSniffer._debug("    - payload: %r", btox(msg.payload))
 
         topic_address = msg.topic.split("/")[-1]
@@ -432,6 +443,7 @@ def main():
         default=default_broker_keepalive,
         help="maximum period in seconds allowed between communications with the broker",
     )
+    parser.add_argument("--cafile", type=str, default=None, help="server certificate")
 
     # parse the command line arguments
     args = parser.parse_args()
@@ -442,7 +454,13 @@ def main():
 
     # make a simple application
     this_application = MQTTSniffer(
-        args.lan, args.host, args.port, args.username, args.password, args.keepalive
+        args.lan,
+        args.host,
+        args.port,
+        args.username,
+        args.password,
+        args.keepalive,
+        args.cafile,
     )
 
     # enable sleeping will help with threads
