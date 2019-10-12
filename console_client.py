@@ -16,14 +16,6 @@ from bacpypes.core import run, deferred, enable_sleeping
 from bacpypes.iocb import IOCB
 
 from bacpypes.pdu import Address, GlobalBroadcast
-from bacpypes.apdu import (
-    WhoIsRequest,
-    IAmRequest,
-    ReadPropertyRequest,
-    ReadPropertyACK,
-    WritePropertyRequest,
-    SimpleAckPDU,
-)
 from bacpypes.primitivedata import (
     Null,
     Atomic,
@@ -38,6 +30,18 @@ from bacpypes.primitivedata import (
     Date,
     Time,
     ObjectIdentifier,
+)
+from bacpypes.basetypes import PropertyIdentifier, PropertyReference
+from bacpypes.apdu import (
+    WhoIsRequest,
+    IAmRequest,
+    ReadPropertyRequest,
+    ReadPropertyACK,
+    ReadPropertyMultipleRequest,
+    ReadAccessSpecification,
+    ReadPropertyMultipleACK,
+    WritePropertyRequest,
+    SimpleAckPDU,
 )
 from bacpypes.constructeddata import Array, Any, AnyAtomic
 
@@ -486,6 +490,165 @@ class ClientConsoleCmd(ConsoleCmd):
                     return
 
                 sys.stdout.write("ack\n")
+
+            # do something for error/reject/abort
+            if iocb.ioError:
+                sys.stdout.write(str(iocb.ioError) + "\n")
+
+        except Exception as error:
+            ClientConsoleCmd._exception("exception: %r", error)
+
+    def do_rpm(self, args):
+        """rpm <addr> ( <objid> ( <prop> [ <indx> ] )... )..."""
+        args = args.split()
+        if _debug:
+            ClientConsoleCmd._debug("do_rpm %r", args)
+
+        try:
+            i = 0
+            addr = args[i]
+            i += 1
+
+            read_access_spec_list = []
+            while i < len(args):
+                obj_id = ObjectIdentifier(args[i]).value
+                i += 1
+
+                prop_reference_list = []
+                while i < len(args):
+                    prop_id = args[i]
+                    if prop_id not in PropertyIdentifier.enumerations:
+                        break
+
+                    i += 1
+                    if prop_id in ("all", "required", "optional"):
+                        pass
+                    else:
+                        datatype = get_datatype(obj_id[0], prop_id)
+                        if not datatype:
+                            raise ValueError("invalid property for object type")
+
+                    # build a property reference
+                    prop_reference = PropertyReference(propertyIdentifier=prop_id)
+
+                    # check for an array index
+                    if (i < len(args)) and args[i].isdigit():
+                        prop_reference.propertyArrayIndex = int(args[i])
+                        i += 1
+
+                    # add it to the list
+                    prop_reference_list.append(prop_reference)
+
+                # check for at least one property
+                if not prop_reference_list:
+                    raise ValueError("provide at least one property")
+
+                # build a read access specification
+                read_access_spec = ReadAccessSpecification(
+                    objectIdentifier=obj_id,
+                    listOfPropertyReferences=prop_reference_list,
+                )
+
+                # add it to the list
+                read_access_spec_list.append(read_access_spec)
+
+            # check for at least one
+            if not read_access_spec_list:
+                raise RuntimeError("at least one read access specification required")
+
+            # build the request
+            request = ReadPropertyMultipleRequest(
+                listOfReadAccessSpecs=read_access_spec_list
+            )
+            request.pduDestination = Address(addr)
+            if _debug:
+                ClientConsoleCmd._debug("    - request: %r", request)
+
+            # make an IOCB
+            iocb = IOCB(request)
+            if _debug:
+                ClientConsoleCmd._debug("    - iocb: %r", iocb)
+
+            # give it to the application
+            deferred(this_application.request_io, iocb)
+
+            # wait for it to complete
+            iocb.wait()
+
+            # do something for success
+            if iocb.ioResponse:
+                apdu = iocb.ioResponse
+
+                # should be an ack
+                if not isinstance(apdu, ReadPropertyMultipleACK):
+                    if _debug:
+                        ClientConsoleCmd._debug("    - not an ack")
+                    return
+
+                # loop through the results
+                for result in apdu.listOfReadAccessResults:
+                    # here is the object identifier
+                    objectIdentifier = result.objectIdentifier
+                    if _debug:
+                        ClientConsoleCmd._debug(
+                            "    - objectIdentifier: %r", objectIdentifier
+                        )
+
+                    # now come the property values per object
+                    for element in result.listOfResults:
+                        # get the property and array index
+                        propertyIdentifier = element.propertyIdentifier
+                        if _debug:
+                            ClientConsoleCmd._debug(
+                                "    - propertyIdentifier: %r", propertyIdentifier
+                            )
+                        propertyArrayIndex = element.propertyArrayIndex
+                        if _debug:
+                            ClientConsoleCmd._debug(
+                                "    - propertyArrayIndex: %r", propertyArrayIndex
+                            )
+
+                        # here is the read result
+                        readResult = element.readResult
+
+                        sys.stdout.write(str(propertyIdentifier))
+                        if propertyArrayIndex is not None:
+                            sys.stdout.write("[" + str(propertyArrayIndex) + "]")
+
+                        # check for an error
+                        if readResult.propertyAccessError is not None:
+                            sys.stdout.write(
+                                " ! " + str(readResult.propertyAccessError) + "\n"
+                            )
+
+                        else:
+                            # here is the value
+                            propertyValue = readResult.propertyValue
+
+                            # find the datatype
+                            datatype = get_datatype(
+                                objectIdentifier[0], propertyIdentifier
+                            )
+                            if _debug:
+                                ClientConsoleCmd._debug("    - datatype: %r", datatype)
+                            if not datatype:
+                                value = "?"
+                            else:
+                                # special case for array parts, others are managed by cast_out
+                                if issubclass(datatype, Array) and (
+                                    propertyArrayIndex is not None
+                                ):
+                                    if propertyArrayIndex == 0:
+                                        value = propertyValue.cast_out(Unsigned)
+                                    else:
+                                        value = propertyValue.cast_out(datatype.subtype)
+                                else:
+                                    value = propertyValue.cast_out(datatype)
+                                if _debug:
+                                    ClientConsoleCmd._debug("    - value: %r", value)
+
+                            sys.stdout.write(" = " + str(value) + "\n")
+                        sys.stdout.flush()
 
             # do something for error/reject/abort
             if iocb.ioError:
