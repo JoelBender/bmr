@@ -4,23 +4,14 @@
 BACnet Masqurade Router
 """
 
-import sys
-import json
-
 from bacpypes.settings import settings as _settings
-from bacpypes.debugging import bacpypes_debugging, DebugContents, ModuleLogger
+from bacpypes.debugging import bacpypes_debugging, ModuleLogger
 from bacpypes.consolelogging import JSONArgumentParser
 
 from bacpypes.core import run, deferred
 from bacpypes.iocb import IOCB
 
 from bacpypes.comm import bind
-from bacpypes.errors import (
-    ExecutionError,
-    UnrecognizedService,
-    AbortException,
-    RejectException,
-)
 from bacpypes.pdu import Address, LocalBroadcast
 
 from bacpypes.vlan import Network, Node
@@ -29,27 +20,23 @@ from bacpypes.bvllservice import BIPSimple, AnnexJCodec, UDPMultiplexer
 
 from bacpypes.app import Application, BIPSimpleApplication
 from bacpypes.appservice import StateMachineAccessPoint, ApplicationServiceAccessPoint
-from bacpypes.object import get_datatype
 from bacpypes.local.device import LocalDeviceObject
 from bacpypes.service.device import WhoIsIAmServices
 from bacpypes.service.object import ReadWritePropertyServices
 
+from bacpypes.primitivedata import ObjectIdentifier
+from bacpypes.constructeddata import ArrayOf, Any
 from bacpypes.apdu import (
-    ConfirmedRequestPDU,
     UnconfirmedRequestPDU,
     SimpleAckPDU,
     ComplexAckPDU,
     ErrorPDU,
-    RejectPDU,
-    AbortPDU,
     WhoIsRequest,
-    IAmRequest,
     ReadPropertyRequest,
     ReadPropertyACK,
     ReadPropertyMultipleRequest,
-    PropertyReference,
-    ReadAccessSpecification,
     ReadPropertyMultipleACK,
+    WritePropertyRequest,
 )
 
 import bacpypes_mqtt
@@ -131,6 +118,25 @@ class VLANApplication(Application, WhoIsIAmServices, ReadWritePropertyServices):
         if _debug:
             VLANApplication._debug("    - apdu: %r", apdu)
 
+        # trap read requests of the device object for its identifier
+        if isinstance(apdu, (ReadPropertyRequest, WritePropertyRequest)):
+            if apdu.objectIdentifier == self.localDevice.objectIdentifier:
+                if apdu.propertyIdentifier == "objectIdentifier":
+                    if _debug:
+                        VLANApplication._debug("    - process locally")
+                    Application.indication(self, apdu)
+                    return
+                else:
+                    if _debug:
+                        VLANApplication._debug("    - substitute the proxy device id")
+                    apdu.objectIdentifier = self.proxyIdentifier
+        elif isinstance(apdu, ReadPropertyMultipleRequest):
+            for ras in apdu.listOfReadAccessSpecs:
+                if ras.objectIdentifier == self.localDevice.objectIdentifier:
+                    if _debug:
+                        VLANApplication._debug("    - substitute the proxy device id")
+                    ras.objectIdentifier = self.proxyIdentifier
+
         # make an IOCB and reference the context
         iocb = IOCB(apdu)
         iocb.iocb_context = iocb_context_key
@@ -166,6 +172,63 @@ class VLANApplication(Application, WhoIsIAmServices, ReadWritePropertyServices):
         if _debug:
             VLANApplication._debug("    - apdu: %r", apdu)
 
+        # trap read responses for properties of the device object
+        if isinstance(apdu, ReadPropertyACK):
+            if apdu.objectIdentifier == self.proxyIdentifier:
+                if _debug:
+                    VLANApplication._debug("    - substitute our device id")
+                apdu.objectIdentifier = self.localDevice.objectIdentifier
+        elif isinstance(apdu, ReadPropertyMultipleACK):
+            for read_access_result in apdu.listOfReadAccessResults:
+                if read_access_result.objectIdentifier == self.proxyIdentifier:
+                    if _debug:
+                        VLANApplication._debug("    - substitute our device id")
+                    read_access_result.objectIdentifier = (
+                        self.localDevice.objectIdentifier
+                    )
+                for access_result in read_access_result.listOfResults:
+                    if access_result.propertyIdentifier == "objectIdentifier":
+                        if access_result.readResult is not None:
+                            objid = access_result.readResult.propertyValue.cast_out(
+                                ObjectIdentifier
+                            )
+                            if _debug:
+                                VLANApplication._debug(
+                                    "    - access_result objid: %r", objid
+                                )
+                            if objid == self.proxyIdentifier:
+                                if _debug:
+                                    VLANApplication._debug(
+                                        "    - substitute our device id"
+                                    )
+
+                                # rebuild the value
+                                access_result.readResult.propertyValue = Any(
+                                    ObjectIdentifier(self.localDevice.objectIdentifier)
+                                )
+                    elif access_result.propertyIdentifier == "objectList":
+                        if access_result.readResult is not None:
+                            object_list = access_result.readResult.propertyValue.cast_out(
+                                ArrayOf(ObjectIdentifier)
+                            )
+                            if _debug:
+                                VLANApplication._debug(
+                                    "    - access_result object_list: %r", object_list
+                                )
+                            for i, objid in enumerate(object_list):
+                                if objid == self.proxyIdentifier:
+                                    if _debug:
+                                        VLANApplication._debug(
+                                            "    - substitute our device id"
+                                        )
+                                    object_list[i] = self.localDevice.objectIdentifier
+
+                                    # rebuild the array
+                                    access_result.readResult.propertyValue = Any(
+                                        ArrayOf(ObjectIdentifier)(object_list)
+                                    )
+                                    break
+
         # eliminate the source, redirect the destination, restore the invoke ID
         apdu.pduSource = None
         apdu.pduDestination = iocb_context_key[0]
@@ -200,19 +263,6 @@ class VLANApplication(Application, WhoIsIAmServices, ReadWritePropertyServices):
             if _debug:
                 VLANApplication._debug("    - no forwarding")
             return
-
-        # trap read requests of the device object for its identifier
-        if isinstance(apdu, ReadPropertyRequest):
-            if apdu.objectIdentifier == self.localDevice.objectIdentifier:
-                if apdu.propertyIdentifier == "objectIdentifier":
-                    if _debug:
-                        VLANApplication._debug("    - from this")
-                    Application.indication(self, apdu)
-                    return
-                else:
-                    if _debug:
-                        VLANApplication._debug("    - from real thing")
-                    apdu.objectIdentifier = self.proxyIdentifier
 
         # all other confirmed services are forwarded
         self.forward_request(apdu)
@@ -331,7 +381,9 @@ class OutsideApplication(Application, WhoIsIAmServices, ReadWritePropertyService
             self.mse = None
 
             # bind the BIP stack to the network
-            self.nsap.bind(self.bip, net=settings.outside.network, address=outside_address)
+            self.nsap.bind(
+                self.bip, net=settings.outside.network, address=outside_address
+            )
 
         # VLAN settings
         vlan_settings = settings["vlan"]
