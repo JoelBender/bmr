@@ -112,12 +112,6 @@ class VLANApplication(Application, WhoIsIAmServices, ReadWritePropertyServices):
                 VLANApplication._debug("    - existing request")
             return
 
-        # eliminate the source and invoke ID, rewrite the destination
-        apdu.pduSource = apdu.apduInvokeID = None
-        apdu.pduDestination = self.proxyAddress
-        if _debug:
-            VLANApplication._debug("    - apdu: %r", apdu)
-
         # trap read requests of the device object for its identifier
         if isinstance(apdu, (ReadPropertyRequest, WritePropertyRequest)):
             if apdu.objectIdentifier == self.localDevice.objectIdentifier:
@@ -136,6 +130,12 @@ class VLANApplication(Application, WhoIsIAmServices, ReadWritePropertyServices):
                     if _debug:
                         VLANApplication._debug("    - substitute the proxy device id")
                     ras.objectIdentifier = self.proxyIdentifier
+
+        # eliminate the source and invoke ID, rewrite the destination
+        apdu.pduSource = apdu.apduInvokeID = None
+        apdu.pduDestination = self.proxyAddress
+        if _debug:
+            VLANApplication._debug("    - apdu: %r", apdu)
 
         # make an IOCB and reference the context
         iocb = IOCB(apdu)
