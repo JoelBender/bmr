@@ -149,16 +149,16 @@ class VLANApplication(Application, WhoIsIAmServices, ReadWritePropertyServices):
         # trap read requests of the device object
         if isinstance(apdu, (ReadPropertyRequest, WritePropertyRequest)):
             if apdu.objectIdentifier == self.localDevice.objectIdentifier:
-                if _debug:
-                    VLANApplication._debug("    - substitute the proxy device id")
-                apdu.objectIdentifier = self.proxyIdentifier
-
                 # trap name and identifier
                 if apdu.propertyIdentifier in ("objectName", "objectIdentifier"):
                     if _debug:
                         VLANApplication._debug("    - process locally")
                     Application.indication(self, apdu)
                     return
+
+                if _debug:
+                    VLANApplication._debug("    - substitute the proxy device id")
+                apdu.objectIdentifier = self.proxyIdentifier
         elif isinstance(apdu, ReadPropertyMultipleRequest):
             for ras in apdu.listOfReadAccessSpecs:
                 if ras.objectIdentifier == self.localDevice.objectIdentifier:
