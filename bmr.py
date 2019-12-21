@@ -4,21 +4,23 @@
 BACnet Masqurade Router
 """
 
+import time
+
 from bacpypes.settings import settings as _settings
-from bacpypes.debugging import bacpypes_debugging, ModuleLogger
+from bacpypes.debugging import bacpypes_debugging, ModuleLogger, btox
 from bacpypes.consolelogging import JSONArgumentParser
 
 from bacpypes.core import run, deferred
 from bacpypes.iocb import IOCB
 
-from bacpypes.comm import bind
+from bacpypes.comm import Client, Server, bind
 from bacpypes.pdu import Address, LocalBroadcast
 
 from bacpypes.vlan import Network, Node
 from bacpypes.netservice import NetworkServiceAccessPoint, NetworkServiceElement
 from bacpypes.bvllservice import BIPSimple, AnnexJCodec, UDPMultiplexer
 
-from bacpypes.app import Application, BIPSimpleApplication
+from bacpypes.app import Application, ApplicationIOController
 from bacpypes.appservice import StateMachineAccessPoint, ApplicationServiceAccessPoint
 from bacpypes.local.device import LocalDeviceObject
 from bacpypes.service.device import WhoIsIAmServices
@@ -49,6 +51,38 @@ _log = ModuleLogger(globals())
 args = None
 inside_application = None
 outside_application = None
+debug_traffic_file = None
+
+
+@bacpypes_debugging
+class Debug(Client, Server):
+    def __init__(self, label=None, cid=None, sid=None):
+        if _debug:
+            Debug._debug("__init__ label=%r cid=%r sid=%r", label, cid, sid)
+
+        Client.__init__(self, cid)
+        Server.__init__(self, sid)
+
+        # save the label
+        self.label = label
+
+    def confirmation(self, pdu):
+        if debug_traffic_file:
+            timestamp = time.strftime("%H:%M:%S")
+            debug_traffic_file.write(
+                f"{timestamp}\t{self.label}\t>>>\t{pdu.pduSource}\t{pdu.pduDestination}\t{btox(pdu.pduData)}\n"
+            )
+
+        self.response(pdu)
+
+    def indication(self, pdu):
+        if debug_traffic_file:
+            timestamp = time.strftime("%H:%M:%S")
+            debug_traffic_file.write(
+                f"{timestamp}\t{self.label}\t<<<\t{pdu.pduSource}\t{pdu.pduDestination}\t{btox(pdu.pduData)}\n"
+            )
+
+        self.request(pdu)
 
 
 @bacpypes_debugging
@@ -339,32 +373,87 @@ class VLANApplication(Application, WhoIsIAmServices, ReadWritePropertyServices):
 
 @bacpypes_debugging
 class InsideApplication(
-    BIPSimpleApplication, WhoIsIAmServices, ReadWritePropertyServices
+    ApplicationIOController, WhoIsIAmServices, ReadWritePropertyServices
 ):
-    def __init__(self, inside_device, inside_address):
+    def __init__(self, localDevice, localAddress, deviceInfoCache=None, aseID=None):
         if _debug:
-            InsideApplication._debug("__init__ %r %r", inside_device, inside_address)
-        BIPSimpleApplication.__init__(self, inside_device, inside_address)
+            InsideApplication._debug(
+                "__init__ %r %r deviceInfoCache=%r aseID=%r",
+                localDevice,
+                localAddress,
+                deviceInfoCache,
+                aseID,
+            )
+        ApplicationIOController.__init__(
+            self, localDevice, localAddress, deviceInfoCache, aseID=aseID
+        )
+
+        # local address might be useful for subclasses
+        if isinstance(localAddress, Address):
+            self.localAddress = localAddress
+        else:
+            self.localAddress = Address(localAddress)
+
+        # include a application decoder
+        self.asap = ApplicationServiceAccessPoint()
+
+        # pass the device object to the state machine access point so it
+        # can know if it should support segmentation
+        self.smap = StateMachineAccessPoint(localDevice)
+
+        # the segmentation state machines need access to the same device
+        # information cache as the application
+        self.smap.deviceInfoCache = self.deviceInfoCache
+
+        # a network service access point will be needed
+        self.nsap = NetworkServiceAccessPoint()
+
+        # give the NSAP a generic network layer service element
+        self.nse = NetworkServiceElement()
+        bind(self.nse, self.nsap)
+
+        # bind the top layers
+        bind(self, self.asap, self.smap, self.nsap)
+
+        # create a generic BIP stack, bound to the Annex J server
+        # on the UDP multiplexer
+        self.bip = BIPSimple()
+        self.annexj = AnnexJCodec()
+        self.debug = Debug("inside")
+        self.mux = UDPMultiplexer(self.localAddress)
+
+        # bind the bottom layers
+        bind(self.bip, self.annexj, self.debug, self.mux.annexJ)
+
+        # bind the BIP stack to the network, no network number
+        self.nsap.bind(self.bip, address=self.localAddress)
 
     def request(self, apdu):
         if _debug:
             InsideApplication._debug("request %r", apdu)
-        BIPSimpleApplication.request(self, apdu)
+        super().request(apdu)
 
     def indication(self, apdu):
         if _debug:
             InsideApplication._debug("indication %r", apdu)
-        BIPSimpleApplication.indication(self, apdu)
+        super().indication(apdu)
 
     def response(self, apdu):
         if _debug:
             InsideApplication._debug("response %r", apdu)
-        BIPSimpleApplication.response(self, apdu)
+        super().response(apdu)
 
     def confirmation(self, apdu):
         if _debug:
             InsideApplication._debug("confirmation %r", apdu)
-        BIPSimpleApplication.confirmation(self, apdu)
+        super().confirmation(apdu)
+
+    def close_socket(self):
+        if _debug:
+            InsideApplication._debug("close_socket")
+
+        # pass to the multiplexer, then down to the sockets
+        self.mux.close_socket()
 
 
 @bacpypes_debugging
@@ -427,10 +516,11 @@ class OutsideApplication(Application, WhoIsIAmServices, ReadWritePropertyService
             # on the UDP multiplexer
             self.bip = BIPSimple()
             self.annexj = AnnexJCodec()
+            self.debug = Debug("outside")
             self.mux = UDPMultiplexer(outside_address)
 
             # bind the bottom layers
-            bind(self.bip, self.annexj, self.mux.annexJ)
+            bind(self.bip, self.annexj, self.debug, self.mux.annexJ)
 
             # no special service element
             self.mse = None
@@ -498,10 +588,12 @@ class OutsideApplication(Application, WhoIsIAmServices, ReadWritePropertyService
 
 
 def main():
-    global args, inside_application, outside_application
+    global args, inside_application, outside_application, debug_traffic_file
 
     # parse the command line arguments
     parser = JSONArgumentParser(description=__doc__)
+
+    parser.add_argument("--traffic", type=str, help="debug traffic file")
 
     # now parse the arguments
     args = parser.parse_args()
@@ -510,6 +602,9 @@ def main():
         _log.debug("initialization")
         _log.debug("    - args: %r", args)
         _log.debug("    - _settings: %r", _settings)
+
+    if args.traffic:
+        debug_traffic_file = open(args.traffic, "w")
 
     # settings are the JSON file
     settings = args.json
@@ -549,6 +644,9 @@ def main():
     # shutdown the client
     if outside_application.mse:
         outside_application.mse.shutdown()
+
+    if debug_traffic_file:
+        debug_traffic_file.close()
 
     _log.debug("fini")
 
