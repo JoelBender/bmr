@@ -3,6 +3,8 @@
 """
 Utility application that reads in the hex dump traffic from the BMR application
 and decodes it.
+
+    $ python dump_traffic.py config.json dump.txt
 """
 
 import sys
@@ -16,17 +18,14 @@ from bacpypes.analysis import decode_packet
 null_address = Address("0x000000000000")
 
 # read in configuration
-with open("xmas-config.json") as bmr_config_file:
+with open(sys.argv[1]) as bmr_config_file:
     bmr_config = json.load(bmr_config_file)
 inside_address = Address(bmr_config["inside"]["_deviceAddress"])
 outside_address = Address(bmr_config["outside"]["_deviceAddress"])
 
 # read in the file, split into lines
-if len(sys.argv) > 1:
-    with open(sys.argv[1]) as infile:
-        lines = infile.readlines()
-else:
-    lines = sys.stdin.readlines()
+with open(sys.argv[2]) as infile:
+    lines = infile.readlines()
 
 # strip off eol, split tabs to fields
 lines = [line[:-1].split("\t") for line in lines]
@@ -42,12 +41,12 @@ for indx, line in enumerate(lines):
         pkt_type = pkt.__class__.__name__
 
     if pkt.pduSource == null_address:
-        if (direction == ">>>"):
+        if direction == ">>>":
             pkt.pduSource = Address(source)
-        elif (direction == "<<<"):
-            if (stack == "inside"):
+        elif direction == "<<<":
+            if stack == "inside":
                 pkt.pduSource = inside_address
-            elif (stack == "outside"):
+            elif stack == "outside":
                 pkt.pduSource = outside_address
 
     if pkt.pduDestination == null_address:

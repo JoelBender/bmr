@@ -65,11 +65,16 @@ class Debug(Client, Server):
         # save the label
         self.label = label
 
+    def _now(self):
+        now = time.time()
+        return time.strftime("%H:%M:%S.", time.gmtime(x)) + "{:03d}".format(
+            int((x - int(x)) * 1000)
+        )
+
     def confirmation(self, pdu):
         if debug_traffic_file:
-            timestamp = time.strftime("%H:%M:%S")
             debug_traffic_file.write(
-                f"{timestamp}\t{self.label}\t>>>\t{pdu.pduSource}\t{pdu.pduDestination}\t{btox(pdu.pduData)}\n"
+                f"{self._now()}\t{self.label}\t>>>\t{pdu.pduSource}\t{pdu.pduDestination}\t{btox(pdu.pduData)}\n"
             )
 
         self.response(pdu)
@@ -78,7 +83,7 @@ class Debug(Client, Server):
         if debug_traffic_file:
             timestamp = time.strftime("%H:%M:%S")
             debug_traffic_file.write(
-                f"{timestamp}\t{self.label}\t<<<\t{pdu.pduSource}\t{pdu.pduDestination}\t{btox(pdu.pduData)}\n"
+                f"{self._now()}\t{self.label}\t<<<\t{pdu.pduSource}\t{pdu.pduDestination}\t{btox(pdu.pduData)}\n"
             )
 
         self.request(pdu)
