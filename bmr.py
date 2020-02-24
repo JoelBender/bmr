@@ -32,7 +32,6 @@ from bacpypes.apdu import (
     UnconfirmedRequestPDU,
     SimpleAckPDU,
     ComplexAckPDU,
-    ErrorPDU,
     WhoIsRequest,
     ReadPropertyRequest,
     ReadPropertyACK,
@@ -194,11 +193,7 @@ class VLANApplication(Application, WhoIsIAmServices, ReadWritePropertyServices):
 
         # check for an error
         if iocb.ioError:
-            if isinstance(iocb.ioError, (SimpleAckPDU, ComplexAckPDU, ErrorPDU)):
-                apdu = iocb.ioError
-            else:
-                VLANApplication._debug("    - abort/reject: %r", iocb.ioError)
-                return
+            apdu = iocb.ioError
         elif iocb.ioResponse:
             apdu = iocb.ioResponse
         else:
