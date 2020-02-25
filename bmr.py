@@ -219,6 +219,9 @@ class VLANApplication(Application, WhoIsIAmServices, ReadWritePropertyServices):
                         VLANApplication._debug(
                             "    - substitute our device id in result"
                         )
+                    apdu.propertyValue = Any(
+                        ObjectIdentifier(self.localDevice.objectIdentifier)
+                    )
 
                 elif apdu.propertyIdentifier == "objectList":
                     if apdu.propertyArrayIndex == 0:
@@ -234,6 +237,9 @@ class VLANApplication(Application, WhoIsIAmServices, ReadWritePropertyServices):
                                 VLANApplication._debug(
                                     "    - substitute our device id in result"
                                 )
+                            apdu.propertyValue = Any(
+                                ObjectIdentifier(self.localDevice.objectIdentifier)
+                            )
 
                     else:
                         object_list = apdu.propertyValue.cast_out(
