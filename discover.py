@@ -170,6 +170,9 @@ class Snapshot:
             Snapshot._debug("write_file %r", filename)
 
         data = list(k + v for k, v in self.data.items())
+        if _debug:
+            Snapshot._debug("    - data: %r", data)
+
         data.sort()
 
         with open(filename, "w") as outfile:
@@ -1031,7 +1034,7 @@ class ReadPropertyMultipleToDo(ToDoItem):
                         snapshot.upsert(
                             self.devid,
                             "{}:{}".format(*objectIdentifier),
-                            propertyIdentifier,
+                            str(propertyIdentifier),
                             str_value,
                         )
 
@@ -1572,7 +1575,7 @@ class DiscoverConsoleCmd(ConsoleCmd):
                             snapshot.upsert(
                                 devid,
                                 "{}:{}".format(*objectIdentifier),
-                                propertyIdentifier,
+                                str(propertyIdentifier),
                                 str_value,
                             )
 
