@@ -486,7 +486,7 @@ class DiscoverApplication(
         # on the UDP multiplexer
         self.bip = BIPSimple()
         self.annexj = AnnexJCodec()
-        self.debug = Debug("app")
+        self.debug = Debug("inside")
         self.mux = UDPMultiplexer(self.localAddress)
 
         # bind the bottom layers
